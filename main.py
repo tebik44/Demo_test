@@ -1,15 +1,19 @@
 import datetime
 import sys
 import time
+from random import randint
 
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QVBoxLayout, QLabel, QPushButton, QMainWindow, \
-    QDialog, QMessageBox, QLineEdit
+from PyQt5.QtGui import QIcon, QStandardItemModel, QStandardItem, QPixmap
+from PyQt5.QtWidgets import QMainWindow, QMessageBox, QLineEdit, QLabel, QComboBox, QFileDialog
 from sqlalchemy import and_, update
 
-from utils.model import Model, Users, Role
+from utils.model import Model
+
+import phonenumbers
+
+
 
 class Login(QtWidgets.QMainWindow):
     def __init__(self):
@@ -22,8 +26,13 @@ class Login(QtWidgets.QMainWindow):
         self.label_3.setText('')
         self.label_2.setText('Нету аккаунта?')
 
+        self.lineEdit_2.setEchoMode(QLineEdit.Password)
+        self.lineEdit_2.setPlaceholderText('Пароль')
+
+
         self.pushButton.setText('Вход')
         self.pushButton_2.setText('Регистрация')
+
 
         self.pushButton.setAutoDefault(True)
         self.pushButton.setDefault(True)
@@ -33,34 +42,27 @@ class Login(QtWidgets.QMainWindow):
     def log(self):
         login = self.lineEdit.text()
         password = self.lineEdit_2.text()
-        session = Model().Session()
+        cur = Model().conn.cursor()
         if len(login) != 0 or len(password) != 0:
-            query = session.query(Users.id_user, Users.last_come, Users.role_id).filter(and_(Users.login == login, Users.password == password)).first()
-
+            cur.execute("select id_role, id_user, photo_moderator from users where email_moderator = %s AND password_moderator = %s", (login, password))
+            query = cur.fetchone()
             if query:
-                before_last_come = query[1]
-                stmt = update(Users).where(Users.id_user == query[0]).values(last_come=datetime.datetime.now())
-                session.execute(stmt)
-
-                session.commit()
-                if query[2] == 1:
-                    self.admin_panel = AdminProfile(login=login, password=password, before_last_come=before_last_come, role_id=query[2])
-                    self.admin_panel.show()
+                if query[0] == 4:
+                    self.profile = Profile(query[1], query[2])
                     self.hide()
-                else:
-                    self.profile = Profile(login=login, password=password, before_last_come=before_last_come, role_id=query[2])
                     self.profile.show()
-                    self.hide()
+            else:
+                QMessageBox.information(self, 'Ошибка', 'Данный пользователь не найден', QMessageBox.Ok)
+
+
+
         else:
             self.label_3.setText("* Все поля должны быть заполнены!")
-
 
     def reg_window(self):
         self.reg_start_polling = Registration()
         self.reg_start_polling.show()
         self.hide()
-
-
 
 
 class Registration(QtWidgets.QMainWindow):
@@ -80,7 +82,6 @@ class Registration(QtWidgets.QMainWindow):
         self.pushButton.clicked.connect(self.start_reg)
         self.pushButton_2.clicked.connect(self.log_window)
 
-
     def start_reg(self):
         login = self.lineEdit.text()
         password = self.lineEdit_2.text()
@@ -90,22 +91,15 @@ class Registration(QtWidgets.QMainWindow):
         if len(login) != 0 or len(password) != 0:
             if query is None:
                 user = Users(
-                    login = login,
-                    password = password,
-                    last_come = datetime.datetime.now(),
-                    role_id = 2
+                    login=login,
+                    password=password,
+                    last_come=datetime.datetime.now(),
+                    role_id=2
                 )
                 try:
                     session.add(user)
                     session.commit()
-                    # self.label_3.setText('ВЫ УСПЕШНО ЗАРЕГИСТРИРОВАНЫ!')
-                    # self.label.setText('ВЫ УСПЕШНО ЗАРЕГИСТРИРОВАНЫ!')
-                    message_box = QMessageBox()
-                    message_box.setWindowTitle("Регистрация")
-                    message_box.setText("Успешно создан аккаунт")
-                    message_box.setIcon(QMessageBox.Information)
-                    message_box.setStandardButtons(QMessageBox.Ok)
-                    message_box.exec_()
+                    QMessageBox.information(self, "Регистрация", "Успешно создан аккаунт", QMessageBox.Ok)
                     self.log_window()
 
                 except Exception as e:
@@ -121,18 +115,14 @@ class Registration(QtWidgets.QMainWindow):
         self.hide()
 
 
-
-
-
-
 class Profile(QMainWindow):
-    def __init__(self, **kwargs):
+    def __init__(self, *args):
         super(Profile, self).__init__()
-        uic.loadUi('Windows/login_and_registr.ui', self)
+        self.args = args
+
+        uic.loadUi('Windows/profile_organisator.ui', self)
         self.setWindowTitle('Профиль!')
         self.setWindowIcon(QIcon('Source/icons/people_gesture_hand_man_icon_258682.ico'))
-
-        self.label.setText('Профиль')
         time_of_day = {
             (4, 12): "Доброе утро",
             (13, 17): "Добрый день",
@@ -142,124 +132,222 @@ class Profile(QMainWindow):
         current_time = datetime.datetime.now().time().hour
         greeting = next((g for time, g in time_of_day.items() if time[0] <= current_time <= time[1]), "Доброй ночи")
 
-        # for time, text in time_of_day.items():
-        #     if time[0] <= current_time <= time[1]:
-        #         greeting = text
+        self.label_2.setText(f"{greeting}")
 
-        self.label_3.setText(f"{greeting} {kwargs['login']}\n Ваш пароль: {kwargs['password']}\n "
-                             f"Ваш предыдущий последний вход был {kwargs['before_last_come']}")
-        self.label_2.hide()
+        self.label_3 = self.findChild(QLabel, 'label_3')
+        self.pixmap = QPixmap(f'Source/image/{args[1]}')
+        self.label_3.setPixmap(self.pixmap)
 
-        self.lineEdit.hide()
-        self.lineEdit_2.hide()
+        self.pushButton = self.findChild(QtWidgets.QPushButton, 'pushButton')
+        self.pushButton_2 = self.findChild(QtWidgets.QPushButton, 'pushButton_2')
+        self.pushButton_3 = self.findChild(QtWidgets.QPushButton, 'pushButton_3')
+        self.pushButton_4 = self.findChild(QtWidgets.QPushButton, 'pushButton_4')
+        self.pushButton_5 = self.findChild(QtWidgets.QPushButton, 'pushButton_5')
+        self.pushButton_6 = self.findChild(QtWidgets.QPushButton, 'pushButton_6')
+        self.pushButton.setText('Жюри')
+        self.pushButton_2.setText('Участники')
+        self.pushButton_3.setText('Мероприятия')
+        self.pushButton_4.setText('Профиль')
+        self.pushButton_5.setText('ВЫХОД')
+        self.pushButton_6.setText('Создать нового Жюри/Модератора')
 
-        self.pushButton.setText('Выход')
-        self.pushButton.clicked.connect(self.exit)
-        self.pushButton_2.hide()
+        self.pushButton_4.clicked.connect(self.about_me)
+        self.pushButton_5.clicked.connect(self.exit)
+        self.pushButton_6.clicked.connect(self.New_moder_zuri)
+
+
+    def about_me(self):
+        cur = Model().conn.cursor()
+        cur.execute("""
+            select r.role, u.last_name, u.first_name, u.middle_name, u.sex, u.email_moderator, u.password_moderator, 
+            u.birthday_date, c.country_name_ru, u.phone_number, d.direction
+            from users u
+                join roles r on u.id_role = r.id_role
+                join country c on u.id_country = c.id_country 
+                join directions d on u.id_direction = d.id_direction
+            where u.id_user = %s;
+        """, (str(self.args[0])))
+        data = cur.fetchall()[0]
+        text = f"""
+            Вы - {data[0]}\n
+            ФИО - {data[1]} {data[2]} {data[3]}\n
+            пол - {data[4]}\n
+            --------------------\n
+            Логин - {data[5]}\n
+            Пароль - {data[6]}\n
+            --------------------\n
+            Дата рождения - {data[7]}\n
+            Страна - {data[8]}\n
+            Номер телефона - {data[9]}\n
+            Направление - {data[10]}
+            
+        """
+        QMessageBox.information(self, 'Профиль', text, QMessageBox.Ok)
 
     def exit(self):
         self.log_start_polling = Login()
         self.log_start_polling.show()
         self.hide()
 
+    def New_moder_zuri(self):
+        self.form = NewModerOrZuri()
+        self.hide()
+        self.form.show()
+
+class NewModerOrZuri(QMainWindow):
+    def __init__(self):
+        super(NewModerOrZuri, self).__init__()
+        uic.loadUi('Windows/Create_new_moder_zuri.ui', self)
+
+        with Model().conn.cursor() as cur:
+            while True:
+                self.number = randint(1, 10000)
+                cur.execute("select id_user from users where id_user = %s",(str(self.number),))
+                if cur.fetchone() is None:
+                    break
+
+        self.label.setText(f'Создания новой Фигуры номер - {self.number}')
+
+        self.lineEdit_5 = self.findChild(QLineEdit, 'lineEdit_5')
+        self.lineEdit_5.setInputMask('+7 000 000 00 00')
+        self.lineEdit_8.setEchoMode(QLineEdit.Password)
+        self.checkBox.stateChanged.connect(self.visible_password)
+
+        self.load_combobox()
+
+        self.pushButton.clicked.connect(self.place_photo)
+        self.pushButton_2.clicked.connect(self.add_data_to_db)
+
+
+    def add_data_to_db(self):
+        with Model().conn.cursor() as cur:
+            cur.execute("select id_role from roles where role = %s",(self.comboBox_role.currentText(),))
+            role = cur.fetchone()[0]
+
+
+
+            data = {
+                'id_user': self.number,
+                'id_role': role,
+                'last_name': self.lineEdit.text(),
+                'first_name': self.lineEdit_3.text(),
+                'middle_name': self.lineEdit_2.text(),
+                'sex': self.comboBox_sex.currentText().lower(),
+                'email_moderator': self.lineEdit_7.text(),
+                'birthday_date': self.dateEdit.text()
+
+
+            }
+
+    def place_photo(self):
+        file_heandel = QFileDialog()
+        image_path, _ = file_heandel.getOpenFileName(self, 'Выберите изображение', '', 'Image (*.png *.jpg *.jpeg)')
+
+        if image_path:
+            self.pixmap = QPixmap(image_path)
+            self.label_2.setPixmap(self.pixmap.scaled(450, 450))
+    def visible_password(self, state):
+        if state == Qt.Checked:
+            self.lineEdit_8.setEchoMode(QLineEdit.Normal)
+        else:
+            self.lineEdit_8.setEchoMode(QLineEdit.Password)
+
+    def load_combobox(self):
+        with Model().conn.cursor() as cur:
+            self.comboBox_sex = self.findChild(QComboBox, 'comboBox')
+            self.comboBox_sex.addItems(['М', 'Ж'])
+
+            self.comboBox_role = self.findChild(QComboBox, 'comboBox_2')
+            cur.execute("select role from roles")
+            data = cur.fetchall()
+            format_data = [item[0] for item in data]
+            self.comboBox_role.addItems(format_data)
+
+            self.comboBox_directions = self.findChild(QComboBox, 'comboBox_3')
+            cur.execute("select direction from directions")
+            data = cur.fetchall()
+            format_data = [item[0] for item in data]
+            self.comboBox_directions.addItems(format_data)
+
+            self.comboBox_country = self.findChild(QComboBox, 'comboBox_4')
+            cur.execute("select cou from directions")
+            data = cur.fetchall()
+            format_data = [item[0] for item in data]
+            self.comboBox_directions.addItems(format_data)
+
+
 
 class AdminProfile(QMainWindow):
-    def __init__(self, **kwargs):
+    def __init__(self, *args):
         super(AdminProfile, self).__init__()
         uic.loadUi('Windows/admin_panel.ui', self)
-
-        # self.lineEdit = self.findChild(QLineEdit, "lineEdit")
-        # self.pushButton = self.findChild(QPushButton, "pushButton")
-        # self.tableWidget = self.findChild(QTableWidget, 'tableWidget')
-        #
-        # layout = QVBoxLayout()
-        #
-        # layout.addWidget(self.lineEdit)
-        # layout.addWidget(self.pushButton)
-        # layout.addWidget(self.tableWidget)
-        #
-        # central_widget = QWidget()
-        # central_widget.setLayout(layout)
-        # self.setCentralWidget(central_widget)
 
         self.sort_order = Qt.AscendingOrder
         self.lineEdit.setPlaceholderText('Поиск по логину')
         self.pushButton.clicked.connect(self.filter_user)
-        # self.setCentralWidget(self.tableWidget)
-        self.tableWidget.horizontalHeader().setSortIndicatorShown(True)
-        self.tableWidget.horizontalHeader().setSortIndicator(0, Qt.DescendingOrder)
-        self.tableWidget.setSortingEnabled(True)
+        self.tableView.horizontalHeader().setSortIndicatorShown(True)
+        self.tableView.horizontalHeader().setSortIndicator(0, Qt.DescendingOrder)
+        self.tableView.setSortingEnabled(True)
+        self.tableView.sortByColumn(0, Qt.AscendingOrder)
 
-        self.tableWidget.horizontalHeader().sectionClicked.connect(self.sort_table)
-        session = Model().Session()
-        self.loaddata(session.query(Users).all())
-        session.close()
-        self.item_change_in_progress = False
 
-        self.tableWidget.itemChanged.connect(self.handle_item_changed)
+        self.load_data()
 
         self.setMinimumSize(1000, 1000)
         self.setMaximumSize(1000, 1000)
 
+        self.tableView.clicked.connect(self.editing)
 
-    def button_item_changed(self):
-        self.tableWidget.itemChanged.connect(self.handle_item_changed)
-
-    def handle_item_changed(self, item):
-        id_item = self.tableWidget.item(item.row(), item.column())
-        self.tableWidget.itemChanged.disconnect(self.handle_item_changed)
-        if not self.item_change_in_progress:
-            self.item_change_in_progress = True
-            if id_item:
-                change_data = item.text()
-                session = Model().Session()
-                column_name = self.tableWidget.horizontalHeaderItem(item.column())
-                id_field = self.tableWidget.item(item.row(), 0)
-                id_field = id_field.text()
-                query = update(Users).where(Users.id_user==id_field).values({column_name.text(): change_data})
-                session.execute(query)
-                session.commit()
-                # self.tableWidget.itemChanged.connect(self.handle_item_changed)
-                self.item_change_in_progress = False
-                self.tableWidget.itemChanged.connect(self.handle_item_changed)
-                self.loaddata(session.query(Users).all())
-                # query = Users.update().value(column_name=item.text()).where(Users.id_user=id_item)
-
-
+    def editing(self, index):
+        row = index.row()
+        id_column_index = 0
+        id_item = self.table_model.item(row, id_column_index)
+        # недописал
     def filter_user(self):
         filter_text = self.lineEdit.text()
         session = Model().Session()
         if filter_text:
             query = session.query(Users).filter(Users.login == filter_text).all()
-            self.loaddata(query)
+            self.load_data(query)
         else:
-            self.loaddata(session.query(Users).all())
+            self.load_data(session.query(Users).all())
 
-    def sort_table(self, index):
-        # if self.sort_order == Qt.AscendingOrder:
-        #     new_order = Qt.DescendingOrder
-        # else:
-        #     new_order = Qt.AscendingOrder
-        self.tableWidget.sortItems(index, Qt.AscendingOrder)
 
-    def loaddata(self, data):
+    def load_data(self, undata=None):
+
+        session = Model().Session()
+        if undata is not None:
+            data = undata
+        else:
+            data = session.query(Users).all()
         if data:
-            column_names = ['id_user', 'login', 'password', 'last_come', 'role_id']
+            column_names = Users.__table__.columns.keys()
             num_rows = len(data)
             num_columns = len(column_names)
 
-            self.tableWidget.setRowCount(num_rows)
-            self.tableWidget.setColumnCount(num_columns)
-            self.tableWidget.setHorizontalHeaderLabels(column_names)
-            # self.tableWidget.setMaximumSize(500, 500)
+            self.table_model = QStandardItemModel(num_rows, num_columns)
+            self.tableView.setModel(self.table_model)
 
             for row_index, user in enumerate(data):
                 for col_index, column_name in enumerate(column_names):
                     cell_data = getattr(user, column_name)
-                    item = QTableWidgetItem(str(cell_data))
+                    item = QStandardItem(str(cell_data))
                     item.setFlags(item.flags() | Qt.ItemIsEditable)
-                    self.tableWidget.setItem(row_index, col_index, item)
-            # self.tableWidget.itemChanged.connect(self.handle_item_changed)
+                    self.table_model.setItem(row_index, col_index, item)
+        else:
+            print('Пусто')
+
+
+class Editing(QMainWindow):
+    def __init__(self):
+        super(Editing, self).__init__()
+
+        uic.loadUi('Windows/editing_win.ui', self)
+
+        self.label.setText('Редактирование')
+
+        self.lineEdit.setPlaceholderText('Логин')
+
 
 
 if __name__ == '__main__':
@@ -269,4 +357,3 @@ if __name__ == '__main__':
     login.show()
 
     sys.exit(app.exec_())
-
