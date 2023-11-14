@@ -224,6 +224,8 @@ class NewModerOrZuri(QMainWindow):
             cur.execute("select id_role from roles where role = %s",(self.comboBox_role.currentText(),))
             role = cur.fetchone()[0]
 
+            cur.execute("select id_counry from counry where counry_name_ru = %s",(self.comboBox_country.currentText(),))
+            counry = cur.fetchone()[0]
 
 
             data = {
@@ -234,8 +236,9 @@ class NewModerOrZuri(QMainWindow):
                 'middle_name': self.lineEdit_2.text(),
                 'sex': self.comboBox_sex.currentText().lower(),
                 'email_moderator': self.lineEdit_7.text(),
-                'birthday_date': self.dateEdit.text()
-
+                'birthday_date': self.dateEdit.text(),
+                'id_counry': counry,
+                # доделать
 
             }
 
